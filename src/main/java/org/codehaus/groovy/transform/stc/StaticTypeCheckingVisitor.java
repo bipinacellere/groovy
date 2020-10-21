@@ -855,28 +855,30 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                     resultType = originType;
                 }
 
-                // if we are in an if/else branch, keep track of assignment
-                if (typeCheckingContext.ifElseForWhileAssignmentTracker != null && leftExpression instanceof VariableExpression
-                        && !isNullConstant(rightExpression)) {
+                // track conditional assignment
+                if (!isNullConstant(rightExpression)
+                        && leftExpression instanceof VariableExpression
+                        && typeCheckingContext.ifElseForWhileAssignmentTracker != null) {
                     Variable accessedVariable = ((VariableExpression) leftExpression).getAccessedVariable();
                     if (accessedVariable instanceof Parameter) {
                         accessedVariable = new ParameterVariableExpression((Parameter) accessedVariable);
                     }
                     if (accessedVariable instanceof VariableExpression) {
-                        VariableExpression var = (VariableExpression) accessedVariable;
-                        List<ClassNode> types = typeCheckingContext.ifElseForWhileAssignmentTracker.get(var);
-                        if (types == null) {
-                            types = new LinkedList<>();
-                            ClassNode type = var.getNodeMetaData(INFERRED_TYPE);
+                        typeCheckingContext.ifElseForWhileAssignmentTracker.computeIfAbsent((VariableExpression) accessedVariable, ve -> {
+                            ClassNode type = ve.getNodeMetaData(INFERRED_TYPE);
+                            if (type == null && !ve.isDynamicTyped()) {
+                                type = originType; // GROOVY-9786
+                            }
+                            List<ClassNode> types = new ArrayList<>(2);
                             types.add(type);
-                            typeCheckingContext.ifElseForWhileAssignmentTracker.put(var, types);
-                        }
-                        types.add(resultType);
+                            return types;
+                        }).add(resultType);
                     }
                 }
+
                 storeType(leftExpression, resultType);
 
-                // if right expression is a ClosureExpression, store parameter type information
+                // propagate closure parameter type information
                 if (leftExpression instanceof VariableExpression) {
                     if (rightExpression instanceof ClosureExpression) {
                         leftExpression.putNodeMetaData(CLOSURE_ARGUMENTS, ((ClosureExpression) rightExpression).getParameters());
